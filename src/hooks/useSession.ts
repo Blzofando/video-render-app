@@ -4,12 +4,11 @@
  */
 import { useState, useEffect } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-
 export interface SessionInfo {
   valid: boolean;
   project_id?: string;
   token?: string;
+  apiUrl?: string;
 }
 
 export function useSession() {
@@ -21,6 +20,9 @@ export function useSession() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get('session');
+    // Se o bot mandar um URL do ngrok no param 'api', usamos ele. Senão cai no .env ou localhost
+    const apiUrlParam = params.get('api');
+    const apiBase = apiUrlParam || import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
     if (!token) {
       setSession(null);
@@ -29,11 +31,11 @@ export function useSession() {
     }
 
     // Validar sessão
-    fetch(`${API_BASE}/api/session/validate?token=${token}`)
+    fetch(`${apiBase}/api/session/validate?token=${token}`)
       .then(r => r.json())
       .then(data => {
         if (data.valid) {
-          setSession({ valid: true, project_id: data.project_id, token });
+          setSession({ valid: true, project_id: data.project_id, token, apiUrl: apiBase });
         } else {
           setSession({ valid: false });
         }
@@ -42,20 +44,21 @@ export function useSession() {
       .finally(() => setLoading(false));
   }, []);
 
-  const saveToePipeline = async (config: object, assContent?: string) => {
-    if (!session?.valid || !session.token) return;
+  const saveToePipeline = async (config: object, assContent?: string, maskDataUrl?: string) => {
+    if (!session?.valid || !session.token || !session.apiUrl) return;
 
     setSaving(true);
     setSaveResult(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/session/save-config`, {
+      const res = await fetch(`${session.apiUrl}/api/session/save-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token: session.token,
           config,
           ass: assContent || null,
+          mask: maskDataUrl || null,
         }),
       });
 

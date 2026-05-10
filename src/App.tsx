@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useProjectStore } from './store/projectStore';
 import { useExportActions } from './hooks/useExportActions';
 import { useSession } from './hooks/useSession';
@@ -12,6 +13,8 @@ import { SubtitleEditor } from './panels/SubtitleEditor';
 import { OverlayPanel } from './panels/OverlayPanel';
 import { WatermarkPanel } from './panels/WatermarkPanel';
 import { ExportPanel } from './panels/ExportPanel';
+import { PresetsModal } from './components/PresetsModal';
+import { exportToAss } from './utils/assExporter';
 import './index.css';
 
 const PANELS: Record<string, React.FC> = {
@@ -30,6 +33,7 @@ function App() {
   const activePanel = useProjectStore((s) => s.activePanel);
   const { exportJSON } = useExportActions();
   const { session, loading, saving, saveResult, saveToePipeline, isSessionMode } = useSession();
+  const [showPresets, setShowPresets] = useState(false);
 
   const ActivePanel = PANELS[activePanel] ?? UploadPanel;
 
@@ -75,9 +79,48 @@ function App() {
   }
 
   const handleSavePipeline = async () => {
-    const config = useProjectStore.getState().exportProject();
-    // TODO: Se tiver ASS gerado, passar como segundo argumento
-    await saveToePipeline(config);
+    const store = useProjectStore.getState();
+    
+    // Usar exportProject() que gera o JSON no formato exato que o Render espera
+    // (com wrapper 'video', 'subtitles', etc.)
+    const config = store.exportProject();
+    
+    // Gerar ASS placeholder apenas se tiver SRT carregado
+    // Se não tiver SRT, o pipeline gerará o ASS final depois com o SRT do Omni
+    let assContent: string | undefined = undefined;
+    if (store.srtEntries.length > 0) {
+      const [w, h] = store.outputFormat === '9:16' ? [1080, 1920] : [1920, 1080];
+      assContent = exportToAss(store.srtEntries, store.subtitleStyle, w, h);
+    }
+    
+    // Gerar Mask se houver marcas
+    let maskDataUrl: string | undefined = undefined;
+    if (store.videoInfo && store.watermarks.length > 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = store.videoInfo.width;
+      canvas.height = store.videoInfo.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = Math.max(2, Math.floor(canvas.height * 0.005));
+        
+        store.watermarks.forEach(wm => {
+          const wx = (wm.x / 100) * canvas.width;
+          const wy = (wm.y / 100) * canvas.height;
+          const ww = (wm.width / 100) * canvas.width;
+          const wh = (wm.height / 100) * canvas.height;
+          if (wm.filled) ctx.fillRect(wx, wy, ww, wh);
+          else ctx.strokeRect(wx, wy, ww, wh);
+        });
+        
+        maskDataUrl = canvas.toDataURL('image/png');
+      }
+    }
+
+    await saveToePipeline(config, assContent, maskDataUrl);
   };
 
   return (
@@ -104,6 +147,10 @@ function App() {
         </div>
 
         <div className="header-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowPresets(true)} title="Gerenciar Pré-Definições">
+            ⭐ Presets
+          </button>
+          
           <button className="btn btn-ghost btn-sm" onClick={exportJSON} title="Salvar projeto como JSON">
             💾 Salvar JSON
           </button>
@@ -158,6 +205,9 @@ function App() {
 
       {/* Right panel */}
       <PreviewPanel />
+      
+      {/* Modals */}
+      {showPresets && <PresetsModal onClose={() => setShowPresets(false)} />}
     </div>
   );
 }

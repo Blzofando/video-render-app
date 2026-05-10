@@ -150,6 +150,7 @@ export interface ProjectState {
   setActivePanel: (panel: string) => void;
   setIsPlayingPreview: (v: boolean) => void;
   setPreviewTime: (t: number) => void;
+  loadPreset: (preset: any) => void;
   exportProject: () => object;
 }
 
@@ -277,6 +278,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setActivePanel: (panel) => set({ activePanel: panel }),
   setIsPlayingPreview: (v) => set({ isPlayingPreview: v }),
   setPreviewTime: (t) => set({ previewTime: t }),
+  loadPreset: (preset: any) => set((s) => ({
+    outputFormat: preset.outputFormat ?? s.outputFormat,
+    cropZoom: preset.cropZoom ? { ...s.cropZoom, ...preset.cropZoom } : s.cropZoom,
+    blurBand: preset.blurBand ? { ...s.blurBand, ...preset.blurBand } : s.blurBand,
+    colorGrade: preset.colorGrade ? { ...s.colorGrade, ...preset.colorGrade } : s.colorGrade,
+    subtitleStyle: preset.subtitleStyle ? { ...s.subtitleStyle, ...preset.subtitleStyle } : s.subtitleStyle,
+    watermarks: preset.watermarks ?? s.watermarks,
+  })),
 
   exportProject: () => {
     const s = get();
