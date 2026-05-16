@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { formatDuration } from '../utils/frameExtractor';
 
@@ -17,11 +17,13 @@ export function PreviewPanel() {
   } = useProjectStore();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fullCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [showFullPreview, setShowFullPreview] = useState(false);
 
   const selectedFrame = extractedFrames.find((f) => f.id === selectedFrameId);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  // Shared render function for both small and full canvases
+  const renderToCanvas = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -141,6 +143,25 @@ export function PreviewPanel() {
         ctx.drawImage(off, 0, 0);
       }
 
+      // Draw blur band guide lines
+      if (blurBand.enabled) {
+        const bandH2 = (blurBand.height / 100) * outH;
+        const bandY2 = (blurBand.positionY / 100) * outH - bandH2 / 2;
+        ctx.save();
+        ctx.setLineDash([8, 4]);
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, bandY2, outW, bandH2);
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.08)';
+        ctx.fillRect(0, bandY2, outW, bandH2);
+        // Label
+        ctx.font = `${Math.round(outH / 60)}px Inter`;
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.7)';
+        ctx.textAlign = 'left';
+        ctx.fillText('Blur Band', 10, bandY2 - 6);
+        ctx.restore();
+      }
+
       // Vignette
       if (colorGrade.vignette > 0) {
         const vGrad = ctx.createRadialGradient(outW / 2, outH / 2, outW * 0.3, outW / 2, outH / 2, outW * 0.8);
@@ -179,14 +200,22 @@ export function PreviewPanel() {
         ctx.restore();
       });
     };
+  };
+
+  // Render to small canvas
+  useEffect(() => {
+    renderToCanvas(canvasRef.current);
   }, [selectedFrame, blurBand, cropZoom, colorGrade, background, outputFormat, overlays]);
 
-  const handleFullscreen = () => {
-    if (canvasRef.current) {
-      if (canvasRef.current.requestFullscreen) {
-        canvasRef.current.requestFullscreen();
-      }
+  // Render to full canvas when modal is open
+  useEffect(() => {
+    if (showFullPreview) {
+      renderToCanvas(fullCanvasRef.current);
     }
+  }, [showFullPreview, selectedFrame, blurBand, cropZoom, colorGrade, background, outputFormat, overlays]);
+
+  const handleFullscreen = () => {
+    setShowFullPreview(true);
   };
 
   return (
@@ -293,6 +322,44 @@ export function PreviewPanel() {
           ))}
         </div>
       </div>
+
+      {/* Fullscreen Modal */}
+      {showFullPreview && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.92)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            backdropFilter: 'blur(8px)',
+          }}
+          onClick={() => setShowFullPreview(false)}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+            <canvas
+              ref={fullCanvasRef}
+              style={{
+                display: 'block',
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                borderRadius: 12,
+                boxShadow: '0 0 60px rgba(124, 58, 237, 0.3)',
+              }}
+            />
+            <div style={{
+              position: 'absolute', top: -36, right: 0,
+              color: 'var(--text-muted)', fontSize: 12,
+              fontFamily: 'JetBrains Mono',
+            }}>
+              {outputFormat === '9:16' ? '1080×1920' : '1920×1080'} · Clique para fechar
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
